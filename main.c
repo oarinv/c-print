@@ -147,7 +147,6 @@ int setDefaultPrinter(const char *fullPath) {
 }
 
 int main() {
-    SetConsoleOutputCP(65001);
     printf("Starting to scan for shared printers in the local network...\n");
 
     char baseIP[16] = "";
