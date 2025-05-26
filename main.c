@@ -142,6 +142,7 @@ int setDefaultPrinter(const char *fullPath) {
 }
 
 int main() {
+    SetConsoleOutputCP(65001); // 设置控制台编码为UTF-8
     printf("开始扫描局域网中的共享打印机...\n");
 
     char baseIP[16] = "";
