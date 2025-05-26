@@ -62,9 +62,10 @@ void getBaseIP(char *baseIP) {
 
     PIP_ADAPTER_INFO pAdapter = adapterInfo;
     while (pAdapter) {
-        if (strncmp(pAdapter->IpAddressList.IpAddress.String, "169.254.", 8) != 0 &&
-            strcmp(pAdapter->IpAddressList.IpAddress.String, "0.0.0.0") != 0) {
-            strcpy(baseIP, pAdapter->IpAddressList.IpAddress.String);
+        const char* ip = pAdapter->IpAddressList.IpAddress.String;
+        // 只选择 192.168.*.* 地址
+        if (strncmp(ip, "192.168.", 8) == 0) {
+            strcpy(baseIP, ip);
             return;
         }
         pAdapter = pAdapter->Next;
