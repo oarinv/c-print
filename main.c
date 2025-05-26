@@ -31,7 +31,7 @@ int printerCount = 0;
 
 void cleanExit() {
     DeleteCriticalSection(&cs);
-    printf("\n按任意键退出...\n");
+    printf("\nPress any key to exit...\n");
     getchar();
     exit(0);
 }
@@ -49,7 +49,6 @@ void addPrinter(const char *ip, const char *shareName) {
 }
 
 int isPrinterShared(const char *ip, const char *shareName) {
-    // 检查共享名中是否包含 "Print"
     return strstr(shareName, "Print") != NULL;
 }
 
@@ -63,7 +62,6 @@ void getBaseIP(char *baseIP) {
     PIP_ADAPTER_INFO pAdapter = adapterInfo;
     while (pAdapter) {
         const char* ip = pAdapter->IpAddressList.IpAddress.String;
-        // 只选择 192.168.*.* 地址
         if (strncmp(ip, "192.168.", 8) == 0) {
             strcpy(baseIP, ip);
             return;
@@ -86,7 +84,6 @@ int hasSMB(const char *ip) {
     addr.sin_port = htons(SMB_PORT);
     addr.sin_addr.s_addr = inet_addr(ip);
 
-    // 设置超时
     DWORD timeout = TIMEOUT_MS;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
@@ -100,13 +97,18 @@ int hasSMB(const char *ip) {
 
 void scanHost(void *arg) {
     char *ip = (char *)arg;
+
     if (!hasSMB(ip)) {
         free(ip);
         return;
     }
 
     char cmd[512];
-    snprintf(cmd, sizeof(cmd), "net view \\\\%s", ip);
+    snprintf(cmd, sizeof(cmd),
+             "powershell -NoProfile -Command "
+             "\"Get-WmiObject -Class Win32_Share -ComputerName %s | "
+             "Where-Object { $_.Type -eq 0 -or $_.Type -eq 1 } | "
+             "ForEach-Object { $_.Name }\"", ip);
 
     FILE *fp = _popen(cmd, "r");
     if (!fp) {
@@ -116,12 +118,15 @@ void scanHost(void *arg) {
 
     char line[512];
     while (fgets(line, sizeof(line), fp)) {
-        if (strstr(line, "Print") || strstr(line, "打印")) {
-            char shareName[256] = "";
-            sscanf(line, "%255s", shareName);
-            if (strlen(shareName) > 0 && strcmp(shareName, "IPC$") != 0) {
-                addPrinter(ip, shareName);
-            }
+        // 移除换行符
+        line[strcspn(line, "\r\n")] = '\0';
+
+        // 过滤 IPC$，仅添加有效共享名
+        if (strlen(line) > 0 &&
+        strcmp(line, "IPC$") != 0 &&
+        strcmp(line, "print$") != 0) {
+
+        addPrinter(ip, line);  // line 是有效共享打印机名
         }
     }
 
@@ -142,17 +147,17 @@ int setDefaultPrinter(const char *fullPath) {
 }
 
 int main() {
-    SetConsoleOutputCP(65001); // 设置控制台编码为UTF-8
-    printf("开始扫描局域网中的共享打印机...\n");
+    SetConsoleOutputCP(65001);
+    printf("Starting to scan for shared printers in the local network...\n");
 
     char baseIP[16] = "";
     getBaseIP(baseIP);
     if (strlen(baseIP) == 0) {
-        printf("未找到有效的本地IP\n");
+        printf("No valid local IP found\n");
         cleanExit();
     }
 
-    printf("使用IP前缀: %s\n", baseIP);
+    printf("Using IP prefix: %s\n", baseIP);
 
     char prefix[16];
     int a, b, c, d;
@@ -165,17 +170,17 @@ int main() {
         char *ip = (char *)malloc(MAX_IP_LENGTH);
         snprintf(ip, MAX_IP_LENGTH, "%s.%d", prefix, i);
         _beginthread(scanHost, 0, ip);
-        Sleep(30); // 控制线程速率
+        Sleep(30);
     }
 
-    Sleep(5000); // 简单等待线程结束（可优化为同步）
+    Sleep(5000);
 
     if (printerCount == 0) {
-        printf("未找到任何共享打印机。\n");
+        printf("No shared printers found.\n");
         cleanExit();
     }
 
-    printf("发现打印机列表：\n");
+    printf("Discovered printers list:\n");
     for (int i = 0; i < printerCount; i++) {
         printf("%d. \\\\%s\\%s\n", i + 1, printers[i].ip, printers[i].shareName);
     }
@@ -184,18 +189,18 @@ int main() {
     char fullPath[512];
     snprintf(fullPath, sizeof(fullPath), "\\\\%s\\%s", selected->ip, selected->shareName);
 
-    printf("自动选择第一个打印机: %s\n", fullPath);
+    printf("Automatically selecting first printer: %s\n", fullPath);
 
     if (connectPrinter(fullPath) != 0) {
-        printf("连接打印机失败\n");
+        printf("Failed to connect to printer\n");
         cleanExit();
     }
 
     if (setDefaultPrinter(fullPath) != 0) {
-        printf("设置默认打印机失败\n");
+        printf("Failed to set default printer\n");
         cleanExit();
     }
 
-    printf("成功连接并设置 %s 为默认打印机！\n", fullPath);
+    printf("Successfully connected and set %s as default printer!\n", fullPath);
     cleanExit();
 }
